@@ -203,7 +203,7 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
 
     // Initialize background music with correct URL
     if (!backgroundMusicRef.current) {
-      const audio = new Audio('/[KAIROSOFT SOUNDTRACKS] Game Dev Story Working Hard (1).mp3');
+      const audio = new Audio('/[KAIROSOFT SOUNDTRACKS] Game Dev Story Working Hard (1) (2).mp3');
       audio.loop = true;
       audio.volume = 0.3;
       audio.preload = 'auto';
