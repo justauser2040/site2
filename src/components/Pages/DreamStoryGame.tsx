@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Trophy, Moon, Sun, Coffee, Smartphone, Bed, Volume2, VolumeX, Star, Award, Heart, Users, Briefcase, Home, Dumbbell, Utensils, Droplets, Bath, Tv, Book, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
+import { ArrowLeft, Trophy, Moon, Sun, Coffee, Smartphone, Bed, Volume2, VolumeX, Star, Award, Heart, Users, Briefcase, Home, Dumbbell, Utensils, Droplets, Bath, Tv, Book, ChevronLeft, ChevronRight, Clock, Calendar, TrendingUp, BarChart3, CheckCircle, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 
 interface DreamStoryGameProps {
@@ -8,7 +8,8 @@ interface DreamStoryGameProps {
 
 interface GameState {
   score: number;
-  currentDay: number;
+  currentDay: number; // 1-7 (Monday to Sunday)
+  currentWeek: number;
   gameTime: Date; // Game time (24h cycle)
   gameCompleted: boolean;
   soundEnabled: boolean;
@@ -30,7 +31,23 @@ interface GameState {
     drinkWater: boolean;
     shower: boolean;
   };
+  weeklyStats: {
+    totalScore: number;
+    healthyChoices: number;
+    sleepHours: number;
+    exerciseDays: number;
+    socialEvents: number;
+  };
+  weeklyObjective: {
+    title: string;
+    description: string;
+    target: number;
+    current: number;
+    type: 'sleep' | 'exercise' | 'health' | 'social';
+  };
   lastActionTime: Date;
+  dayTransition: boolean;
+  showWeeklySummary: boolean;
 }
 
 interface Room {
@@ -80,8 +97,9 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
   
   const [gameState, setGameState] = useState<GameState>({
     score: 0,
-    currentDay: 1,
-    gameTime: new Date(2024, 0, 1, 7, 0, 0), // Start at 7:00 AM
+    currentDay: 1, // Monday
+    currentWeek: 1,
+    gameTime: new Date(2024, 0, 1, 7, 0, 0), // Start at 7:00 AM Monday
     gameCompleted: false,
     soundEnabled: true,
     musicEnabled: true,
@@ -102,7 +120,23 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
       drinkWater: false,
       shower: false
     },
-    lastActionTime: new Date()
+    weeklyStats: {
+      totalScore: 0,
+      healthyChoices: 0,
+      sleepHours: 0,
+      exerciseDays: 0,
+      socialEvents: 0
+    },
+    weeklyObjective: {
+      title: 'Melhore a Qualidade do Sono',
+      description: 'Durma pelo menos 7 horas por noite durante 5 dias',
+      target: 5,
+      current: 0,
+      type: 'sleep'
+    },
+    lastActionTime: new Date(),
+    dayTransition: false,
+    showWeeklySummary: false
   });
 
   const rooms: Room[] = [
@@ -195,6 +229,33 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
     }
   ];
 
+  const weeklyObjectives = [
+    {
+      title: 'Melhore a Qualidade do Sono',
+      description: 'Durma pelo menos 7 horas por noite durante 5 dias',
+      target: 5,
+      type: 'sleep' as const
+    },
+    {
+      title: 'Vida Ativa e Saudável',
+      description: 'Exercite-se pelo menos 4 dias na semana',
+      target: 4,
+      type: 'exercise' as const
+    },
+    {
+      title: 'Equilíbrio Social',
+      description: 'Mantenha relacionamentos saudáveis com 3 eventos sociais',
+      target: 3,
+      type: 'social' as const
+    },
+    {
+      title: 'Saúde em Primeiro Lugar',
+      description: 'Mantenha a saúde acima de 70% por 6 dias',
+      target: 6,
+      type: 'health' as const
+    }
+  ];
+
   // Initialize audio context and background music
   useEffect(() => {
     if (gameState.soundEnabled && !audioContextRef.current) {
@@ -238,19 +299,7 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
         
         // Check if it's a new day (past midnight)
         if (newGameTime.getDate() !== prev.gameTime.getDate()) {
-          return {
-            ...prev,
-            gameTime: newGameTime,
-            currentDay: prev.currentDay + 1,
-            dailyActions: {
-              sleep: false,
-              eat: false,
-              exercise: false,
-              relax: false,
-              drinkWater: false,
-              shower: false
-            }
-          };
+          return handleDayTransition(prev, newGameTime);
         }
         
         return {
@@ -292,6 +341,113 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
         });
       }
     }
+  };
+
+  const handleDayTransition = (prevState: GameState, newGameTime: Date): GameState => {
+    const newDay = prevState.currentDay + 1;
+    const isNewWeek = newDay > 7;
+    
+    // Calculate daily score based on completed actions
+    const dailyScore = calculateDailyScore(prevState);
+    
+    // Update weekly stats
+    const updatedWeeklyStats = {
+      ...prevState.weeklyStats,
+      totalScore: prevState.weeklyStats.totalScore + dailyScore,
+      healthyChoices: prevState.weeklyStats.healthyChoices + countHealthyChoices(prevState.dailyActions),
+      sleepHours: prevState.weeklyStats.sleepHours + (prevState.dailyActions.sleep ? 7 : 4),
+      exerciseDays: prevState.weeklyStats.exerciseDays + (prevState.dailyActions.exercise ? 1 : 0),
+      socialEvents: prevState.weeklyStats.socialEvents + (prevState.dailyActions.relax ? 1 : 0)
+    };
+
+    // Update weekly objective progress
+    const updatedObjective = updateWeeklyObjective(prevState.weeklyObjective, prevState.dailyActions, prevState.alex);
+
+    if (isNewWeek) {
+      // Show weekly summary
+      return {
+        ...prevState,
+        gameTime: newGameTime,
+        currentDay: 1,
+        currentWeek: prevState.currentWeek + 1,
+        weeklyStats: updatedWeeklyStats,
+        weeklyObjective: updatedObjective,
+        showWeeklySummary: true,
+        dayTransition: true,
+        dailyActions: {
+          sleep: false,
+          eat: false,
+          exercise: false,
+          relax: false,
+          drinkWater: false,
+          shower: false
+        }
+      };
+    } else {
+      // Regular day transition
+      return {
+        ...prevState,
+        gameTime: newGameTime,
+        currentDay: newDay,
+        weeklyStats: updatedWeeklyStats,
+        weeklyObjective: updatedObjective,
+        dayTransition: true,
+        dailyActions: {
+          sleep: false,
+          eat: false,
+          exercise: false,
+          relax: false,
+          drinkWater: false,
+          shower: false
+        }
+      };
+    }
+  };
+
+  const calculateDailyScore = (state: GameState): number => {
+    let score = 0;
+    Object.values(state.dailyActions).forEach(action => {
+      if (action) score += 10;
+    });
+    
+    // Bonus for good health stats
+    if (state.alex.health > 70) score += 5;
+    if (state.alex.energy > 70) score += 5;
+    if (state.alex.sleepQuality > 70) score += 10;
+    
+    return score;
+  };
+
+  const countHealthyChoices = (actions: GameState['dailyActions']): number => {
+    return Object.values(actions).filter(Boolean).length;
+  };
+
+  const updateWeeklyObjective = (
+    objective: GameState['weeklyObjective'], 
+    actions: GameState['dailyActions'], 
+    alex: GameState['alex']
+  ): GameState['weeklyObjective'] => {
+    let progress = 0;
+    
+    switch (objective.type) {
+      case 'sleep':
+        progress = actions.sleep ? 1 : 0;
+        break;
+      case 'exercise':
+        progress = actions.exercise ? 1 : 0;
+        break;
+      case 'health':
+        progress = alex.health > 70 ? 1 : 0;
+        break;
+      case 'social':
+        progress = actions.relax ? 1 : 0;
+        break;
+    }
+    
+    return {
+      ...objective,
+      current: Math.min(objective.current + progress, objective.target)
+    };
   };
 
   // 8-bit sound generation
@@ -601,12 +757,18 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
     });
   };
 
+  const getDayName = (dayNumber: number): string => {
+    const days = ['Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado', 'Domingo'];
+    return days[dayNumber - 1] || 'Segunda-feira';
+  };
+
   const resetGame = () => {
     handleFirstInteraction();
     
     setGameState({
       score: 0,
       currentDay: 1,
+      currentWeek: 1,
       gameTime: new Date(2024, 0, 1, 7, 0, 0),
       gameCompleted: false,
       soundEnabled: gameState.soundEnabled,
@@ -628,7 +790,17 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
         drinkWater: false,
         shower: false
       },
-      lastActionTime: new Date()
+      weeklyStats: {
+        totalScore: 0,
+        healthyChoices: 0,
+        sleepHours: 0,
+        exerciseDays: 0,
+        socialEvents: 0
+      },
+      weeklyObjective: weeklyObjectives[0],
+      lastActionTime: new Date(),
+      dayTransition: false,
+      showWeeklySummary: false
     });
     setAlexAnimation('idle');
     setShowFeedback({ show: false, message: '', type: 'positive' });
@@ -643,7 +815,196 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
     setGameState(prev => ({ ...prev, soundEnabled: !prev.soundEnabled }));
   };
 
+  const handleDayTransitionComplete = () => {
+    setGameState(prev => ({ ...prev, dayTransition: false }));
+  };
+
+  const handleWeeklySummaryClose = () => {
+    // Generate new weekly objective
+    const newObjective = weeklyObjectives[Math.floor(Math.random() * weeklyObjectives.length)];
+    
+    setGameState(prev => ({
+      ...prev,
+      showWeeklySummary: false,
+      dayTransition: false,
+      weeklyStats: {
+        totalScore: 0,
+        healthyChoices: 0,
+        sleepHours: 0,
+        exerciseDays: 0,
+        socialEvents: 0
+      },
+      weeklyObjective: {
+        ...newObjective,
+        current: 0
+      }
+    }));
+  };
+
   const currentRoom = getCurrentRoom();
+
+  // Weekly Summary Modal
+  if (gameState.showWeeklySummary) {
+    const weeklyScore = Math.round((gameState.weeklyStats.totalScore / 7) * 100 / 100);
+    const objectiveCompleted = gameState.weeklyObjective.current >= gameState.weeklyObjective.target;
+    
+    return (
+      <div className={`h-screen flex items-center justify-center px-6 transition-colors duration-300 ${
+        isDark ? 'bg-slate-950' : 'bg-gradient-to-br from-white via-emerald-50/80 to-emerald-100/60'
+      }`}>
+        <div className={`backdrop-blur-sm rounded-2xl p-8 border max-w-md w-full transition-colors duration-300 ${
+          isDark 
+            ? 'bg-slate-900/90 border-slate-800' 
+            : 'bg-white/90 border-gray-200 shadow-lg'
+        }`}>
+          <div className="text-center">
+            <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+              <BarChart3 className="w-10 h-10 text-emerald-400" />
+            </div>
+            
+            <h2 className={`text-2xl font-bold mb-4 transition-colors duration-300 ${
+              isDark ? 'text-white' : 'text-gray-900'
+            }`}>
+              Resumo da Semana {gameState.currentWeek - 1}
+            </h2>
+            
+            {/* Weekly Stats */}
+            <div className="space-y-4 mb-6">
+              <div className={`flex justify-between items-center p-3 rounded-lg ${
+                isDark ? 'bg-slate-800/50' : 'bg-gray-100/80'
+              }`}>
+                <span className={`text-sm ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Pontuação Total
+                </span>
+                <span className={`font-bold ${getScoreColor()}`}>
+                  {gameState.weeklyStats.totalScore}
+                </span>
+              </div>
+              
+              <div className={`flex justify-between items-center p-3 rounded-lg ${
+                isDark ? 'bg-slate-800/50' : 'bg-gray-100/80'
+              }`}>
+                <span className={`text-sm ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Escolhas Saudáveis
+                </span>
+                <span className="font-bold text-emerald-400">
+                  {gameState.weeklyStats.healthyChoices}
+                </span>
+              </div>
+              
+              <div className={`flex justify-between items-center p-3 rounded-lg ${
+                isDark ? 'bg-slate-800/50' : 'bg-gray-100/80'
+              }`}>
+                <span className={`text-sm ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Horas de Sono
+                </span>
+                <span className="font-bold text-blue-400">
+                  {gameState.weeklyStats.sleepHours}h
+                </span>
+              </div>
+              
+              <div className={`flex justify-between items-center p-3 rounded-lg ${
+                isDark ? 'bg-slate-800/50' : 'bg-gray-100/80'
+              }`}>
+                <span className={`text-sm ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                  Dias de Exercício
+                </span>
+                <span className="font-bold text-purple-400">
+                  {gameState.weeklyStats.exerciseDays}
+                </span>
+              </div>
+            </div>
+            
+            {/* Weekly Objective Result */}
+            <div className={`p-4 rounded-lg border mb-6 ${
+              objectiveCompleted
+                ? isDark
+                  ? 'bg-emerald-500/20 border-emerald-500/30'
+                  : 'bg-emerald-100/80 border-emerald-300/50'
+                : isDark
+                  ? 'bg-red-500/20 border-red-500/30'
+                  : 'bg-red-100/80 border-red-300/50'
+            }`}>
+              <div className="flex items-center gap-2 mb-2">
+                {objectiveCompleted ? (
+                  <CheckCircle className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-5 h-5 text-red-400" />
+                )}
+                <span className={`font-medium ${
+                  objectiveCompleted ? 'text-emerald-400' : 'text-red-400'
+                }`}>
+                  {objectiveCompleted ? 'Objetivo Concluído!' : 'Objetivo Não Concluído'}
+                </span>
+              </div>
+              <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                {gameState.weeklyObjective.title}
+              </p>
+              <p className={`text-xs mt-1 ${isDark ? 'text-slate-400' : 'text-gray-600'}`}>
+                {gameState.weeklyObjective.current}/{gameState.weeklyObjective.target} concluído
+              </p>
+            </div>
+            
+            {/* Performance Message */}
+            <div className={`p-4 rounded-lg mb-6 ${
+              isDark ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-100/80 border border-blue-300/50'
+            }`}>
+              <p className={`text-sm ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                {weeklyScore >= 80 
+                  ? "🎉 Excelente semana! Alex está muito saudável e feliz!"
+                  : weeklyScore >= 60
+                    ? "👍 Boa semana! Alex está progredindo bem."
+                    : weeklyScore >= 40
+                      ? "⚠️ Semana regular. Alex precisa de mais cuidados."
+                      : "😟 Semana difícil. Alex precisa de mudanças urgentes."
+                }
+              </p>
+            </div>
+            
+            <button
+              onClick={handleWeeklySummaryClose}
+              className="bg-emerald-500 hover:bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold transition-colors"
+            >
+              Começar Nova Semana
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Day Transition Animation
+  if (gameState.dayTransition) {
+    return (
+      <div className={`h-screen flex items-center justify-center transition-colors duration-300 ${
+        isDark ? 'bg-slate-950' : 'bg-gradient-to-br from-white via-emerald-50/80 to-emerald-100/60'
+      }`}>
+        <div className="text-center">
+          <div className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+            <Calendar className="w-12 h-12 text-emerald-400" />
+          </div>
+          <h2 className={`text-2xl font-bold mb-4 transition-colors duration-300 ${
+            isDark ? 'text-white' : 'text-gray-900'
+          }`}>
+            {getDayName(gameState.currentDay)}
+          </h2>
+          <p className={`text-lg mb-6 transition-colors duration-300 ${
+            isDark ? 'text-slate-300' : 'text-gray-700'
+          }`}>
+            Dia {gameState.currentDay} - Semana {gameState.currentWeek}
+          </p>
+          <div className="flex items-center justify-center gap-2 text-emerald-400">
+            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+            <div className="w-2 h-2 bg-emerald-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+          </div>
+          
+          {/* Auto-close after 3 seconds */}
+          {setTimeout(handleDayTransitionComplete, 3000)}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`h-screen flex flex-col transition-colors duration-300 overflow-hidden ${
@@ -679,6 +1040,14 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
             </div>
             
             <div className="flex items-center gap-2">
+              {/* Day and Week Display */}
+              <div className={`flex items-center gap-1 px-3 py-1 rounded-lg transition-colors duration-300 ${
+                isDark ? 'bg-slate-800 text-white' : 'bg-gray-200 text-gray-900'
+              }`}>
+                <Calendar className="w-4 h-4" />
+                <span className="text-sm font-medium">{getDayName(gameState.currentDay)}</span>
+              </div>
+
               {/* Game Clock */}
               <div className={`flex items-center gap-1 px-3 py-1 rounded-lg transition-colors duration-300 ${
                 isDark ? 'bg-slate-800 text-white' : 'bg-gray-200 text-gray-900'
@@ -747,7 +1116,7 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
         <div className={`flex-shrink-0 px-4 py-3 border-b transition-colors duration-300 ${
           isDark ? 'bg-slate-900/50 border-slate-800' : 'bg-emerald-50/50 border-emerald-200'
         }`}>
-          <div className="grid grid-cols-4 gap-2 text-center">
+          <div className="grid grid-cols-5 gap-2 text-center">
             <div>
               <div className={`text-lg font-bold ${getScoreColor()}`}>
                 {gameState.score}
@@ -761,11 +1130,11 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
               <div className={`text-lg font-bold transition-colors duration-300 ${
                 isDark ? 'text-purple-400' : 'text-purple-600'
               }`}>
-                Dia {gameState.currentDay}
+                S{gameState.currentWeek}
               </div>
               <div className={`text-xs transition-colors duration-300 ${
                 isDark ? 'text-slate-400' : 'text-emerald-700'
-              }`}>Atual</div>
+              }`}>Semana</div>
             </div>
 
             <div>
@@ -784,6 +1153,40 @@ const DreamStoryGame: React.FC<DreamStoryGameProps> = ({ onBack }) => {
               <div className={`text-xs transition-colors duration-300 ${
                 isDark ? 'text-slate-400' : 'text-emerald-700'
               }`}>Local</div>
+            </div>
+
+            <div>
+              <div className={`text-sm font-bold transition-colors duration-300 ${
+                gameState.weeklyObjective.current >= gameState.weeklyObjective.target 
+                  ? 'text-emerald-400' 
+                  : 'text-amber-400'
+              }`}>
+                {gameState.weeklyObjective.current}/{gameState.weeklyObjective.target}
+              </div>
+              <div className={`text-xs transition-colors duration-300 ${
+                isDark ? 'text-slate-400' : 'text-emerald-700'
+              }`}>Objetivo</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Weekly Objective Display */}
+        <div className={`flex-shrink-0 px-4 py-2 border-b transition-colors duration-300 ${
+          isDark ? 'bg-slate-800/30 border-slate-800' : 'bg-emerald-100/30 border-emerald-200'
+        }`}>
+          <div className="text-center">
+            <p className={`text-xs font-medium transition-colors duration-300 ${
+              isDark ? 'text-slate-300' : 'text-emerald-800'
+            }`}>
+              🎯 {gameState.weeklyObjective.title}
+            </p>
+            <div className={`w-full rounded-full h-1 mt-1 transition-colors duration-300 ${
+              isDark ? 'bg-slate-700' : 'bg-emerald-200'
+            }`}>
+              <div
+                className="h-1 rounded-full transition-all duration-300 bg-emerald-500"
+                style={{ width: `${(gameState.weeklyObjective.current / gameState.weeklyObjective.target) * 100}%` }}
+              />
             </div>
           </div>
         </div>
